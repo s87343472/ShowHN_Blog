@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Show HN Daily - {{ date }}{% endblock %}
+
+{% block content %}
+<h1 class="text-4xl font-bold mb-8">Show HN Daily - {{ date }}</h1>
+
+{% for post in posts %}
+<div class="mb-12 p-6 border rounded-lg bg-white shadow-md">
+    <h2 class="text-2xl font-semibold mb-4">
+        <a href="{{ post.url }}" class="text-blue-600 hover:underline">{{ post.title }}</a>
+    </h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+            <img src="{{ post.screenshot }}" alt="Screenshot of {{ post.title }}" class="w-full h-auto rounded-lg">
+        </div>
+        <div>
+            <p class="mb-2"><strong>Website Info:</strong> {{ post.website_info }}</p>
+            <p class="mb-2"><strong>Description:</strong> {{ post.description }}</p>
+            <p class="mb-2"><strong>Votes:</strong> {{ post.votes }}</p>
+            <p class="mb-2"><strong>Posted by:</strong> {{ post.poster }}</p>
+            <p class="mb-2"><strong>Time:</strong> {{ post.time }}</p>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
