@@ -1,119 +1,177 @@
 import requests
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta  # 修改这行，添加 timedelta
 import pytz
 import os
 import json
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
-from feedgen.feed import FeedGenerator
-from flask import url_for
+from feedgenerator import Rss201rev2Feed
+from flask import current_app, url_for
+from requests.exceptions import RequestException
+import time
+import feedgenerator
 
 # 初始化日志
 logging.basicConfig(level=logging.INFO)
 
 # 确保数据和截图存储路径存在
-data_dir = "data"
-screenshot_dir = os.path.join(data_dir, "screenshots")
-os.makedirs(screenshot_dir, exist_ok=True)
+data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+data_file = os.path.join(data_dir, "show_hn_posts.json")
+
+def load_local_data():
+    try:
+        with open(os.path.join(data_dir, "show_hn_posts.json"), "r") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and 'posts' in data:
+            return data['posts']
+        elif isinstance(data, list):
+            return data
+        else:
+            current_app.logger.error("Invalid data format in show_hn_posts.json")
+            return []
+    except Exception as e:
+        current_app.logger.error(f"Error loading local data: {str(e)}")
+        return []
 
 def get_show_hn_posts():
-    logging.info("Starting to fetch Show HN posts.")
+    current_app.logger.info("Starting to fetch Show HN posts.")
     show_hn_posts = []
     
-    # 获取过去24小时内的帖子
-    end_time = int(datetime.now().timestamp())
-    start_time = end_time - 24 * 60 * 60
+    try:
+        new_stories_url = "https://hacker-news.firebaseio.com/v0/newstories.json"
+        new_stories = requests.get(new_stories_url).json()
 
-    # 获取新的 Show HN 帖子
-    new_stories_url = "https://hacker-news.firebaseio.com/v0/newstories.json"
-    new_stories = requests.get(new_stories_url).json()
+        utc = pytz.UTC
+        for story_id in new_stories[:30]:  # 限制处理的帖子数量
+            story_url = f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json"
+            story = requests.get(story_url).json()
 
-    for story_id in new_stories:
-        story_url = f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json"
-        story = requests.get(story_url).json()
-
-        if story and "show hn" in story.get("title", "").lower() and start_time <= story.get("time", 0) <= end_time:
-            show_hn_posts.append(process_story(story))
-
+            if story and "show hn" in story.get("title", "").lower():
+                post_time = datetime.fromtimestamp(story.get("time", 0), tz=utc)
+                show_hn_posts.append({
+                    "id": str(story['id']),
+                    "title": story.get("title"),
+                    "url": story.get("url", ""),
+                    "description": story.get("text", ""),
+                    "votes": story.get("score", 0),
+                    "poster": story.get("by"),
+                    "time": post_time.strftime("%Y-%m-%d %I:%M %p %Z"),
+                    "date": post_time.strftime("%Y-%m-%d"),
+                    "screenshot": capture_screenshot(story.get("url", "")),
+                    "website_info": get_website_info(story.get("url", "")),
+                })
+    except RequestException as e:
+        current_app.logger.error(f"Error fetching stories: {str(e)}")
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error during post fetching: {str(e)}")
+    
+    current_app.logger.info(f"Fetched {len(show_hn_posts)} Show HN posts.")
     return show_hn_posts
 
-def process_story(story):
-    url = story.get("url", f"https://news.ycombinator.com/item?id={story['id']}")
-    screenshot_path = capture_screenshot(url, story['id'])
-    website_info = get_website_info(url)
-
-    return {
-        "id": story['id'],
-        "title": story.get("title"),
-        "url": url,
-        "description": story.get("text", ""),
-        "votes": story.get("score", 0),
-        "screenshot": screenshot_path,
-        "website_info": website_info,
-        "poster": story.get("by"),
-        "time": datetime.fromtimestamp(story.get("time", 0), tz=pytz.timezone('US/Pacific')).strftime("%Y-%m-%d %I:%M %p"),
-    }
-
-def capture_screenshot(url, story_id):
-    screenshot_path = os.path.join(screenshot_dir, f"{story_id}.png")
-    if os.path.exists(screenshot_path):
-        return screenshot_path
-
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
+def update_show_hn_posts():
     try:
-        driver = webdriver.Chrome(options=chrome_options)
-        driver.get(url)
-        driver.set_window_size(1280, 800)
-        driver.save_screenshot(screenshot_path)
-        driver.quit()
-        logging.info(f"Screenshot generated for story {story_id}.")
+        posts = get_show_hn_posts()
+        if not posts:
+            current_app.logger.warning("No posts fetched. Using sample data.")
+            posts = [
+                {
+                    "id": "sample1",
+                    "title": "Sample Show HN Post",
+                    "url": "https://example.com",
+                    "description": "This is a sample post.",
+                    "votes": 10,
+                    "poster": "SampleUser",
+                    "time": datetime.now(pytz.UTC).strftime("%Y-%m-%d %I:%M %p %Z"),
+                    "date": datetime.now(pytz.UTC).strftime("%Y-%m-%d"),
+                    "screenshot": None,
+                    "website_info": "Sample website information",
+                }
+            ]
+        
+        os.makedirs(data_dir, exist_ok=True)
+        with open(os.path.join(data_dir, "show_hn_posts.json"), "w") as f:
+            json.dump({"posts": posts, "last_updated": datetime.now().isoformat()}, f)
+        current_app.logger.info("Show HN posts updated and saved to file.")
     except Exception as e:
-        logging.error(f"Error generating screenshot for {url}: {e}")
-        return "/static/images/screenshot_placeholder.png"
+        current_app.logger.error(f"Error updating Show HN posts: {str(e)}")
 
-    return screenshot_path
+def capture_screenshot(url):
+    if not url:
+        return None
+
+    screenshot_dir = os.path.join(data_dir, "screenshots")
+    os.makedirs(screenshot_dir, exist_ok=True)
+    
+    filename = f"{hash(url)}.png"
+    filepath = os.path.join('screenshots', filename)
+    full_path = os.path.join(data_dir, filepath)
+    
+    if os.path.exists(full_path):
+        return filepath
+
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
+    
+    try:
+        driver.get(url)
+        time.sleep(5)  # 等待页面加载
+        driver.set_window_size(1280, 1024)
+        driver.save_screenshot(full_path)
+        return filepath
+    except Exception as e:
+        current_app.logger.error(f"Error capturing screenshot for {url}: {str(e)}")
+        return None
+    finally:
+        driver.quit()
 
 def get_website_info(url):
+    if not url:
+        return "无可用信息"
+
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 尝试获取网站描述
         description = soup.find('meta', attrs={'name': 'description'})
-        return description['content'] if description else "No additional info available."
+        if description:
+            return description['content']
+        
+        # 如果没有描述，尝试获取第一段文字
+        first_paragraph = soup.find('p')
+        if first_paragraph:
+            return first_paragraph.text.strip()[:200] + "..."
+        
+        return "无可用信息"
     except Exception as e:
-        logging.error(f"Error fetching website info for {url}: {e}")
-        return "No additional info available."
+        current_app.logger.error(f"Error fetching website info for {url}: {str(e)}")
+        return "法获取网站信息"
 
-def update_show_hn_posts():
-    posts = get_show_hn_posts()
-    with open(os.path.join(data_dir, "show_hn_posts.json"), "w") as f:
-        json.dump(posts, f)
-    
-    # 生成新的 RSS feed
-    host_url = "http://yourdomain.com"  # 替换为你的实际域名
-    rss_feed = generate_rss_feed(posts, host_url)
-    with open(os.path.join(data_dir, "rss_feed.xml"), "wb") as f:
-        f.write(rss_feed)
-    
-    logging.info("Show HN posts and RSS feed updated and saved to file.")
+def generate_rss_feed():
+    feed = Rss201rev2Feed(
+        title="Daily Show HN",
+        link="http://yourdomain.com",
+        description="Daily summary of Show HN posts",
+        language="en",
+    )
 
-def generate_rss_feed(posts, host_url):
-    fg = FeedGenerator()
-    fg.title('Show HN Daily')
-    fg.description('Daily summary of Show HN posts from Hacker News')
-    fg.link(href=host_url)
+    data = load_local_data()
+    for post in data:
+        feed.add_item(
+            title=post['title'],
+            link=post['url'],
+            description=post.get('description', ''),
+            pubdate=datetime.strptime(post['date'], "%Y-%m-%d"),
+            unique_id=post['url']
+        )
 
-    for post in posts:
-        fe = fg.add_entry()
-        fe.title(post['title'])
-        fe.link(href=post['url'])
-        fe.description(post['description'])
-        fe.pubDate(datetime.strptime(post['time'], "%Y-%m-%d %I:%M %p"))
-
-    return fg.rss_str(pretty=True)
+    return feed.writeString('utf-8')

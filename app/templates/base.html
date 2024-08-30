@@ -4,12 +4,54 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Show HN Daily{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="alternate" type="application/rss+xml" title="Show HN Daily RSS Feed" href="{{ url_for('main.rss_feed') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+    <meta name="description" content="Daily summary of Show HN posts - Showcasing the latest tech innovations and projects">
+    <meta name="keywords" content="Show HN, technology, innovation, projects, daily summary">
+    <link rel="alternate" type="application/rss+xml" title="Daily Show HN RSS Feed" href="{{ url_for('main.rss') }}">
 </head>
 <body class="bg-gray-100">
-    <div class="container mx-auto px-4 py-8">
+    <nav class="bg-white shadow-lg mb-8">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <a href="/" class="font-bold text-xl text-gray-800">Daily Show HN</a>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <a href="{{ url_for('main.rss') }}" class="text-orange-500 hover:text-orange-600">
+                        <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M5 3a1 1 0 000 2c5.523 0 10 4.477 10 10a1 1 0 102 0C17 8.373 11.627 3 5 3z"></path>
+                            <path d="M4 9a1 1 0 011-1 7 7 0 017 7 1 1 0 11-2 0 5 5 0 00-5-5 1 1 0 01-1-1z"></path>
+                            <path d="M3 15a2 2 0 114 0 2 2 0 01-4 0z"></path>
+                        </svg>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {% block content %}{% endblock %}
-    </div>
+    </main>
+
+    <footer class="bg-white mt-12">
+        <div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+            <p class="text-center text-base text-gray-400">
+                © {{ current_year }} Daily Show HN. All rights reserved.
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+    </script>
 </body>
 </html>
